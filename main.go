@@ -31,6 +31,9 @@ type (
 		// can work without this.
 		Password string `json:"password" binding:"required"`
 
+		// Name is not required in Cognito, but we have made it required in this User struct
+		Name string `json:"name" binding:"required"`
+
 		// Email is the user email used at signup time.
 		// this is a required field and must be used at login time.
 	}
@@ -81,9 +84,16 @@ func (app *App) RegisterUser(ctx *gin.Context) {
 		Password: aws.String(newUser.User.Password),
 		ClientId: aws.String(app.AppClientID),
 		UserAttributes: []*cognito.AttributeType{
+			// Email is a required standard attribute provided by Cognito out-of-the-box
 			{
 				Name:  aws.String("email"),
 				Value: aws.String(newUser.Email),
+			},
+			// "name" is also a standard attribute which is not required by cognito but we have made it required in "User" struct.
+			// Standard attributes in Cognito 👉: https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html#cognito-user-pools-standard-attributes
+			{
+				Name:  aws.String("name"),
+				Value: aws.String(newUser.User.Name),
 			},
 		},
 	}
