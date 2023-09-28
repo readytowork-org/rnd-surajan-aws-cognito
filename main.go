@@ -41,6 +41,12 @@ type (
 		User  User   `json:"user" binding:"required"`
 		Email string `json:"email" binding:"required"`
 	}
+
+	// User Registration Confirmation
+	UserRegisterConfirmation struct {
+		Username         string `json:"username" binding:"required"`
+		ConfirmationCode string `json:"confirmationCode" binding:"required"`
+	}
 )
 
 func main() {
@@ -66,12 +72,18 @@ func main() {
 		})
 	})
 	r.POST("/signup", app.RegisterUser)
+	r.POST("/signup/confirmation", app.ConfirmUserRegistration)
 	// Serve on 0.0.0.0:8080 or localhost:8080
 	r.Run()
 }
 
+// Register
+// This struct function uses a pointer receiver i.e. "app *App" instead of "app App"
+// Because, we can only call "app.AppClientId" or "app.CognitoClient.SignUp(cognitoUser)", etc when "app" is a pointer not a value
 func (app *App) RegisterUser(ctx *gin.Context) {
 	var newUser UserRegister
+
+	// Validate payload
 	if err := ctx.BindJSON(&newUser); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -79,6 +91,7 @@ func (app *App) RegisterUser(ctx *gin.Context) {
 		return
 	}
 
+	// Cognito Signup input
 	cognitoUser := &cognito.SignUpInput{
 		Username: aws.String(newUser.User.Username),
 		Password: aws.String(newUser.User.Password),
@@ -97,6 +110,7 @@ func (app *App) RegisterUser(ctx *gin.Context) {
 			},
 		},
 	}
+
 	// Signup in Cognito
 	_, err := app.CognitoClient.SignUp(cognitoUser)
 	if err != nil {
@@ -105,7 +119,44 @@ func (app *App) RegisterUser(ctx *gin.Context) {
 		})
 		return
 	}
+
+	// OK
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "User Registered Successfully",
+	})
+}
+
+// Confirm User Registration
+// After User Registration, a verification code will be sent in their email. Use that to verify user registration
+func (app *App) ConfirmUserRegistration(ctx *gin.Context) {
+	var confirmUser UserRegisterConfirmation
+
+	// Validate payload
+	if err := ctx.BindJSON(&confirmUser); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Cognito user confirmation input
+	cognitoConfirm := &cognito.ConfirmSignUpInput{
+		ClientId:         aws.String(app.AppClientID),
+		ConfirmationCode: aws.String(confirmUser.ConfirmationCode),
+		Username:         aws.String(confirmUser.Username),
+	}
+
+	// Confirm User Registration in Cognito
+	_, err := app.CognitoClient.ConfirmSignUp(cognitoConfirm)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// OK
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "User is verified",
 	})
 }
