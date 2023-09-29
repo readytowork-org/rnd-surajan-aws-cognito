@@ -31,15 +31,14 @@ type (
 		// can work without this.
 		Password string `json:"password" binding:"required"`
 
-		// Name is not required in Cognito, but we have made it required in this User struct
-		Name string `json:"name" binding:"required"`
-
 		// Email is the user email used at signup time.
 		// this is a required field and must be used at login time.
 	}
 	UserRegister struct {
 		User  User   `json:"user" binding:"required"`
 		Email string `json:"email" binding:"required"`
+		Name  string `json:"name" binding:"required"`
+		// Name is not required in Cognito, but we have made it required in this User struct
 	}
 
 	// User Registration Confirmation
@@ -73,6 +72,7 @@ func main() {
 	})
 	r.POST("/signup", app.RegisterUser)
 	r.POST("/signup/confirmation", app.ConfirmUserRegistration)
+	r.POST("/signin", app.LoginUser)
 	// Serve on 0.0.0.0:8080 or localhost:8080
 	r.Run()
 }
@@ -106,7 +106,7 @@ func (app *App) RegisterUser(ctx *gin.Context) {
 			// Standard attributes in Cognito 👉: https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html#cognito-user-pools-standard-attributes
 			{
 				Name:  aws.String("name"),
-				Value: aws.String(newUser.User.Name),
+				Value: aws.String(newUser.Name),
 			},
 		},
 	}
@@ -158,5 +158,44 @@ func (app *App) ConfirmUserRegistration(ctx *gin.Context) {
 	// OK
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "User is verified",
+	})
+}
+
+// Login User
+func (app *App) LoginUser(ctx *gin.Context) {
+	var user User
+
+	// Validate payload
+	if err := ctx.BindJSON(&user); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Cognito Signin input
+	cognitoUser := &cognito.InitiateAuthInput{
+		AuthFlow: aws.String("USER_PASSWORD_AUTH"),
+		AuthParameters: map[string]*string{
+			"USERNAME": aws.String(user.Username),
+			"PASSWORD": aws.String(user.Password),
+			// 👆 We have not configured a Secret key for this app client so we don't need to include "SECRET_HASH" in these parameters
+		},
+		ClientId: aws.String(app.AppClientID),
+	}
+
+	// Signin in Cognito
+	logInResult, err := app.CognitoClient.InitiateAuth(cognitoUser)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// OK
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":     "User Logged In Successfully",
+		"accessToken": *logInResult.AuthenticationResult.IdToken,
 	})
 }
