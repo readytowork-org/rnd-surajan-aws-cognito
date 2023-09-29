@@ -46,6 +46,11 @@ type (
 		Username         string `json:"username" binding:"required"`
 		ConfirmationCode string `json:"confirmationCode" binding:"required"`
 	}
+
+	// User Forgot Password
+	UserForgotPassword struct {
+		Username string `json:"username" binding:"required"`
+	}
 )
 
 func main() {
@@ -73,6 +78,7 @@ func main() {
 	r.POST("/signup", app.RegisterUser)
 	r.POST("/signup/confirmation", app.ConfirmUserRegistration)
 	r.POST("/signin", app.LoginUser)
+	r.POST("/password/forgot", app.ForgotPassword)
 	// Serve on 0.0.0.0:8080 or localhost:8080
 	r.Run()
 }
@@ -177,6 +183,8 @@ func (app *App) LoginUser(ctx *gin.Context) {
 	cognitoUser := &cognito.InitiateAuthInput{
 		AuthFlow: aws.String("USER_PASSWORD_AUTH"),
 		AuthParameters: map[string]*string{
+			// 💡 User can send either username, email or phone number in the "username" property in payload.
+			// We have enabled it in our userpool so that users can sign in using their email address, phone number, or username
 			"USERNAME": aws.String(user.Username),
 			"PASSWORD": aws.String(user.Password),
 			// 👆 We have not configured a Secret key for this app client so we don't need to include "SECRET_HASH" in these parameters
@@ -197,5 +205,39 @@ func (app *App) LoginUser(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"message":     "User Logged In Successfully",
 		"accessToken": *logInResult.AuthenticationResult.IdToken,
+	})
+}
+
+// User Forgot Password
+func (app *App) ForgotPassword(ctx *gin.Context) {
+	var user UserForgotPassword
+
+	// Validate payload
+	if err := ctx.BindJSON(&user); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Cognito Forgot Password input
+	cognitoUser := &cognito.ForgotPasswordInput{
+		// 💡 Just like login, user can send either username, email or phone number in the "username" property in payload.
+		Username: aws.String(user.Username),
+		ClientId: aws.String(app.AppClientID),
+	}
+
+	// Forgot Password in Cognito
+	_, err := app.CognitoClient.ForgotPassword(cognitoUser)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// OK
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "Code was sent to your email. Please use that code to reset your password.",
 	})
 }
