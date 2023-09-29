@@ -51,6 +51,12 @@ type (
 	UserForgotPassword struct {
 		Username string `json:"username" binding:"required"`
 	}
+
+	// User Change Password
+	UserResetPassword struct {
+		User             User   `json:"user" binding:"required"`
+		ConfirmationCode string `json:"confirmationCode" binding:"required"`
+	}
 )
 
 func main() {
@@ -79,6 +85,7 @@ func main() {
 	r.POST("/signup/confirmation", app.ConfirmUserRegistration)
 	r.POST("/signin", app.LoginUser)
 	r.POST("/password/forgot", app.ForgotPassword)
+	r.POST("/password/reset", app.ResetPassword)
 	// Serve on 0.0.0.0:8080 or localhost:8080
 	r.Run()
 }
@@ -239,5 +246,41 @@ func (app *App) ForgotPassword(ctx *gin.Context) {
 	// OK
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Code was sent to your email. Please use that code to reset your password.",
+	})
+}
+
+// User Reset Password
+func (app *App) ResetPassword(ctx *gin.Context) {
+	var user UserResetPassword
+
+	// Validate payload
+	if err := ctx.BindJSON(&user); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Cognito Reset Password input
+	cognitoUser := &cognito.ConfirmForgotPasswordInput{
+		// 💡 Just like login, user can send either username, email or phone number in the "username" property in payload.
+		Username:         aws.String(user.User.Username),
+		Password:         aws.String(user.User.Password),
+		ConfirmationCode: aws.String(user.ConfirmationCode),
+		ClientId:         aws.String(app.AppClientID),
+	}
+
+	// Reset Password in Cognito
+	_, err := app.CognitoClient.ConfirmForgotPassword(cognitoUser)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// OK
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "Password successfully reset.",
 	})
 }
