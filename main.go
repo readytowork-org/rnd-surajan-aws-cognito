@@ -57,6 +57,11 @@ type (
 		User             User   `json:"user" binding:"required"`
 		ConfirmationCode string `json:"confirmationCode" binding:"required"`
 	}
+
+	// User Logout
+	UserSignOut struct {
+		AccessToken string `json:"accessToken" binding:"required"`
+	}
 )
 
 func main() {
@@ -86,6 +91,7 @@ func main() {
 	r.POST("/signin", app.LoginUser)
 	r.POST("/password/forgot", app.ForgotPassword)
 	r.POST("/password/reset", app.ResetPassword)
+	r.POST("/signout", app.LogoutUser)
 	// Serve on 0.0.0.0:8080 or localhost:8080
 	r.Run()
 }
@@ -211,7 +217,8 @@ func (app *App) LoginUser(ctx *gin.Context) {
 	// OK
 	ctx.JSON(http.StatusOK, gin.H{
 		"message":     "User Logged In Successfully",
-		"accessToken": *logInResult.AuthenticationResult.IdToken,
+		"accessToken": *logInResult.AuthenticationResult.AccessToken,
+		"idToken":     *logInResult.AuthenticationResult.IdToken,
 	})
 }
 
@@ -282,5 +289,37 @@ func (app *App) ResetPassword(ctx *gin.Context) {
 	// OK
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Password successfully reset.",
+	})
+}
+
+// Logout User
+func (app *App) LogoutUser(ctx *gin.Context) {
+	var user UserSignOut
+
+	// Validate payload
+	if err := ctx.BindJSON(&user); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Cognito Logout input
+	cognitoUser := &cognito.GlobalSignOutInput{
+		AccessToken: aws.String(user.AccessToken),
+	}
+
+	// Logout in Cognito
+	_, err := app.CognitoClient.GlobalSignOut(cognitoUser)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// OK
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "User logged out successfully.",
 	})
 }
